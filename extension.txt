@@ -1,0 +1,7 @@
+npm init -y
+npm install
+npm install express
+npm install express sqlite3
+npm install socket.io
+npm install cors
+npm install axios socket.io
