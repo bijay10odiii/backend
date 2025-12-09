@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Live Weather Dashboard</title>
+  <style>
+    body { font-family: Arial; background: #111; color: white; text-align: center; }
+    .box { margin: 20px; padding: 20px; border: 2px solid #0f0; display: inline-block; }
+  </style>
+</head>
+<body>
+  <h1>🌤 Live Weather Dashboard</h1>
+  <div class="box">🌡 Temperature: <span id="temp">--</span> °C</div>
+  <div class="box">💧 Humidity: <span id="hum">--</span> %</div>
+
+  <script>
+    const ws = new WebSocket("ws://localhost:3001");
+    ws.onmessage = ({data}) => {
+      const d = JSON.parse(data);
+      document.getElementById("temp").innerText = d.temperature;
+      document.getElementById("hum").innerText = d.humidity;
+    }
+  </script>
+</body>
+</html>
