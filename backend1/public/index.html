@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sensor Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background-color: #f0f4f8;
+    }
+    h1 {
+      color: #333;
+    }
+    #data {
+      font-size: 1.5em;
+      margin-top: 20px;
+      background: #fff;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body>
+  <h1>📡 Live Sensor Dashboard</h1>
+  <div id="data">Waiting for data...</div>
+
+  <script>
+    // Show latest reading on page load
+    fetch("/api/latest")
+      .then(res => res.text())
+      .then(text => {
+        if (!text) {
+          console.warn("No data returned from /api/latest");
+          return;
+        }
+        const data = JSON.parse(text);
+        if (data && data.temperature !== undefined) {
+          document.getElementById("data").innerHTML =
+            `🕒 ${new Date().toLocaleTimeString()}<br>
+             🌡️ Temperature: ${data.temperature} °C<br>
+             💧 Humidity: ${data.humidity} %`;
+        }
+      })
+      .catch(err => console.error("Error fetching latest data:", err));
+
+    // Connect to WebSocket for live updates
+    const ws = new WebSocket("wss://" + window.location.host);
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      document.getElementById("data").innerHTML =
+        `🕒 ${new Date().toLocaleTimeString()}<br>
+         🌡️ Temperature: ${data.temperature} °C<br>
+         💧 Humidity: ${data.humidity} %`;
+    };
+
+    ws.onerror = (err) => {
+      console.error("WebSocket error:", err);
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket disconnected");
+    };
+  </script>
+</body>
+</html>
