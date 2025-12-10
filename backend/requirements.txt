@@ -1,6 +1,0 @@
-npm init -y
-npm install express
-npm install express sqlite3
-npm install ws
-brew install ngrok
-npm install cors
