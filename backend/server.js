@@ -1,39 +1,47 @@
-// // 
-// const express = require('express');
-// const sqlite3 = require('sqlite3').verbose();
-// const { WebSocketServer } = require('ws');
+// // ================== IMPORTS ==================
+// const express = require("express");
+// const cors = require("cors");
+// const path = require("path");
+// const WebSocket = require("ws");
+// const sqlite3 = require("sqlite3").verbose();
 
+// // ================== APP SETUP ==================
 // const app = express();
 // const port = 3000;
 
 // // Middleware
+// app.use(cors());
 // app.use(express.json());
+// app.use(express.static(path.join(__dirname, "public")));
 
-// // Connect to SQLite
+// // ================== SQLITE DATABASE ==================
 // const db = new sqlite3.Database('./sensor.db', (err) => {
 //   if (err) return console.error(err.message);
 //   console.log('Connected to SQLite database');
 // });
 
-// // Create table
+// // Create table if not exists
 // db.run(`
 //   CREATE TABLE IF NOT EXISTS sensor (
 //     id INTEGER PRIMARY KEY AUTOINCREMENT,
 //     temperature REAL,
 //     humidity REAL,
-//     status TEXT,
 //     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 //   );
 // `);
 
-// // HTTP POST Endpoint (Optional Backup)
+// // ================== EXPRESS API ==================
 // app.post('/api/sensor', (req, res) => {
-//   const { temperature, humidity, status } = req.body;
-//   saveSensorData(temperature, humidity, status);
-//   res.json({ message: "Sensor data saved via HTTP!" });
+//   const { temperature, humidity } = req.body;
+//   db.run(`INSERT INTO sensor (temperature, humidity) VALUES (?, ?)`,
+//     [temperature, humidity],
+//     function (err) {
+//       if (err) return res.status(500).json({ error: err.message });
+//       res.json({ message: "Sensor data saved!", id: this.lastID });
+//     }
+//   );
 // });
 
-// // HTTP GET
 // app.get('/api/sensor', (req, res) => {
 //   db.get(`SELECT * FROM sensor ORDER BY timestamp DESC LIMIT 1`, (err, row) => {
 //     if (err) return res.status(500).json({ error: err.message });
@@ -41,143 +49,156 @@
 //   });
 // });
 
-// // Start HTTP Server
+// // ================== FRONTEND WEBSOCKET ==================
+// const frontendWS = new WebSocket.Server({ port: 3001 });
+
+// frontendWS.on('connection', (ws) => {
+//   console.log('Frontend connected!');
+//   ws.on('close', () => console.log('Frontend disconnected!'));
+// });
+
+// function broadcastToFrontend(data) {
+//   frontendWS.clients.forEach(client => {
+//     if (client.readyState === WebSocket.OPEN) {
+//       client.send(JSON.stringify(data));
+//     }
+//   });
+// }
+
+// // ================== ESP32 WEBSOCKET ==================
+// const esp32WS = new WebSocket.Server({ noServer: true });
+
+// esp32WS.on('connection', (ws) => {
+//   console.log('ESP32 connected!');
+//   ws.on('message', (msg) => {
+//     const data = JSON.parse(msg);
+//     console.log('From ESP32:', data);
+
+//     db.run(`INSERT INTO sensor (temperature, humidity) VALUES (?, ?)`,
+//       [data.temperature, data.humidity]
+//     );
+//     broadcastToFrontend(data);
+//   });
+
+//   ws.on('close', () => console.log('ESP32 disconnected!'));
+// });
+
+// // ================== HTTP SERVER / WS UPGRADE ==================
 // const server = app.listen(port, () => {
 //   console.log(`Server running at http://localhost:${port}`);
 // });
 
-// // ⬇️ WebSocket Server
-// const wss = new WebSocketServer({ server });
-
-// wss.on('connection', (ws) => {
-//   console.log("New WebSocket connection!");
-
-//   ws.on('message', (msg) => {
-//     try {
-//       const data = JSON.parse(msg.toString());
-//       console.log("Received:", data);
-//       saveSensorData(data.temp, data.humidity, "OK");
-
-//       // Broadcast to all connected clients (Frontend Dashboards)
-//       broadcast(JSON.stringify(data));
-//     } catch {
-//       console.log("Invalid message:", msg.toString());
-//     }
-//   });
+// server.on('upgrade', (req, socket, head) => {
+//   if (req.url === '/esp-ws') {
+//     esp32WS.handleUpgrade(req, socket, head, (ws) => {
+//       esp32WS.emit('connection', ws, req);
+//     });
+//   } else {
+//     socket.destroy();
+//   }
 // });
 
-// // Save to DB function
-// function saveSensorData(temp, humidity, status = "OK") {
-//   db.run(
-//     `INSERT INTO sensor (temperature, humidity, status) VALUES (?, ?, ?)`,
-//     [temp, humidity, status],
-//     (err) => err && console.error("DB Error:", err.message)
-//   );
-// }
-
-// // Broadcast to all dashboards
-// function broadcast(msg) {
-//   wss.clients.forEach(ws => ws.send(msg));
-// }
-
-
-// ================== IMPORTS ==================
 const express = require('express');
+const bodyParser = require('body-parser');
 const sqlite3 = require('sqlite3').verbose();
 const WebSocket = require('ws');
-const bodyParser = require('body-parser');
+const path = require('path');
 
-// ================== APP SETUP ==================
 const app = express();
-const port = 3000;
+const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+// Discord webhook URL (replace with your actual one)
+const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1446910732884250638/tAJy7gxBKVij-a4nmQFAPigIFA4ToS376dW1bfeCaJlwAxu-7ZcfZsZw-WTu_5N-x2kC';
+
+// ✅ Thresholds for alerts
+const TEMP_THRESHOLD = 30.0;   // °C
+const HUM_THRESHOLD  = 20.0;   // %
+
+const db = new sqlite3.Database('./data.db');
+db.run(`CREATE TABLE IF NOT EXISTS readings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  temperature REAL,
+  humidity REAL,
+  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
-// ================== SQLITE DATABASE ==================
-const db = new sqlite3.Database('./sensor.db', (err) => {
-  if (err) return console.error(err.message);
-  console.log('Connected to SQLite database');
+// API routes
+app.get('/api/readings', (req, res) => {
+  db.all('SELECT * FROM readings ORDER BY timestamp DESC', [], (err, rows) => {
+    if (err) return res.status(500).send('DB error');
+    res.json(rows);
+  });
 });
 
-// Create table if it does not exist
-db.run(`
-  CREATE TABLE IF NOT EXISTS sensor (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    temperature REAL,
-    humidity REAL,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-`);
-
-// ================== EXPRESS API ==================
-
-// Save data manually by HTTP (optional)
-app.post('/api/sensor', (req, res) => {
-  const { temperature, humidity } = req.body;
-
-  db.run(
-    `INSERT INTO sensor (temperature, humidity) VALUES (?, ?)`,
-    [temperature, humidity],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ message: "Sensor data saved!", id: this.lastID });
-    }
-  );
-});
-
-// Get latest sensor data (for testing)
-app.get('/api/sensor', (req, res) => {
-  db.get(`SELECT * FROM sensor ORDER BY timestamp DESC LIMIT 1`, (err, row) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get('/api/latest', (req, res) => {
+  db.get('SELECT * FROM readings ORDER BY timestamp DESC LIMIT 1', [], (err, row) => {
+    if (err) return res.status(500).send('DB error');
     res.json(row || {});
   });
 });
 
-// ================== WEBSOCKET SERVER ==================
-const wss = new WebSocket.Server({ port: 3001 });
+// Webhook route: receive sensor data, store, broadcast, and forward to Discord if threshold crossed
+app.post('/webhook', (req, res) => {
+  const { temperature, humidity } = req.body;
+  console.log("Incoming payload:", req.body);
 
-wss.on('connection', (ws) => {
-  console.log('Frontend connected to WebSocket!');
-  
-  ws.on('close', () => console.log('Frontend Disconnected!'));
+  db.run(
+    'INSERT INTO readings (temperature, humidity) VALUES (?, ?)',
+    [temperature, humidity],
+    async (err) => {
+      if (err) {
+        console.error("DB error:", err);
+        return res.status(500).send('DB error');
+      }
+      console.log("Inserted into DB:", { temperature, humidity });
+
+      // Broadcast to WebSocket clients
+      broadcast({ temperature, humidity });
+
+      // ✅ Only forward to Discord if thresholds are crossed
+      if (temperature > TEMP_THRESHOLD || humidity < HUM_THRESHOLD) {
+        try {
+          const msg = `⚠️ Alert! Temp=${temperature} °C | Hum=${humidity} %`;
+          const response = await fetch(DISCORD_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: msg })
+          });
+          if (!response.ok) {
+            throw new Error(`Discord responded with ${response.status}`);
+          }
+          console.log("Alert sent to Discord:", msg);
+        } catch (error) {
+          console.error("Error sending to Discord:", error);
+        }
+      }
+
+      res.status(200).send('Data received');
+    }
+  );
 });
 
-// Broadcast to all connected frontend clients
+// Start server
+const server = app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+// WebSocket setup
+const wss = new WebSocket.Server({ server });
+
+wss.on('connection', (socket) => {
+  console.log("WebSocket client connected");
+});
+
 function broadcast(data) {
-  wss.clients.forEach(client => {
+  const message = JSON.stringify(data);
+  console.log("Broadcasting:", message);
+  wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(data));
+      client.send(message);
     }
   });
 }
-
-// ================== HANDLE ESP32 WEBSOCKET DATA ==================
-const esp32 = new WebSocket.Server({ port: 3002 });
-
-esp32.on('connection', (ws) => {
-  console.log('ESP32 connected!');
-
-  ws.on('message', (msg) => {
-    console.log("Data from ESP32:", msg.toString());
-    const data = JSON.parse(msg.toString());
-
-    // Save to SQLite
-    db.run(
-      `INSERT INTO sensor (temperature, humidity) VALUES (?, ?)`,
-      [data.temperature, data.humidity]
-    );
-
-    // Broadcast to frontend
-    broadcast(data);
-  });
-
-  ws.on('close', () => console.log('ESP32 disconnected!'));
-});
-
-// ================== START EXPRESS SERVER ==================
-app.listen(port, () => {
-  console.log(`HTTP API running at http://localhost:${port}`);
-  console.log(`WebSocket for Frontend: ws://localhost:3001`);
-  console.log(`WebSocket for ESP32: ws://localhost:3002`);
-});
