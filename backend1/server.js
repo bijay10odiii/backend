@@ -9,7 +9,6 @@ const PORT = process.env.PORT || 3000;
 
 // Discord webhook URL (replace with your actual one)
 const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1447973219695853689/nBrVPCxNDpDKQEEpgqRBCtbtO9CKnxTcb-u9qxPbmQVyTvrmJ1Zd60SFF_IQCuSv5Zxa';
-
 // ✅ Thresholds for alerts
 const TEMP_THRESHOLD = 30.0;   // °C
 const HUM_THRESHOLD  = 20.0;   // %
