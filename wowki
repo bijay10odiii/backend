@@ -1,0 +1,75 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <DHT.h>
+
+#define DHTPIN 15
+#define DHTTYPE DHT22
+DHT dht(DHTPIN, DHTTYPE);
+
+const char* ssid = "Wokwi-GUEST";
+const char* password = "";
+
+const char* mqtt_server = "test.mosquitto.org";  // same broker
+const int mqtt_port = 1883;
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    String clientId = "ESP32Friend-";
+    clientId += String(random(0xffff), HEX);
+    if (client.connect(clientId.c_str())) {
+      Serial.println("connected");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      delay(5000);
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  dht.begin();
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi connected");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  client.setServer(mqtt_server, mqtt_port);
+}
+
+void loop() {
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+
+  float temperature = dht.readTemperature();
+  float humidity = dht.readHumidity();
+
+  if (!isnan(temperature) && !isnan(humidity)) {
+    char tempStr[8], humStr[8];
+    dtostrf(temperature, 1, 2, tempStr);
+    dtostrf(humidity, 1, 2, humStr);
+
+    // Friend’s namespace
+    client.publish("friend/weather/temp", tempStr);
+    client.publish("friend/weather/humidity", humStr);
+
+    Serial.print("Published Friend Temp: ");
+    Serial.println(tempStr);
+    Serial.print("Published Friend Humidity: ");
+    Serial.println(humStr);
+  }
+
+  delay(10000);
+}
