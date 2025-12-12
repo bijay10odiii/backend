@@ -1,100 +1,63 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Live Sensor Dashboard</title>
-
+<!-- Author: Bijay-->
+<meta charset="UTF-8" />
+<title>Simple Sensor Dashboard</title>
 <style>
   body {
-    margin: 0;
-    padding: 0;
-    font-family: "Poppins", sans-serif;
-    background: linear-gradient(135deg, #0a0f24, #07182d);
-    color: #fff;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
+    font-family: Arial, sans-serif;
+    background: #f3f3f3;
+    padding: 40px;
   }
 
-  .card {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    backdrop-filter: blur(10px);
-    padding: 30px;
-    width: 350px;
+  .box {
+    background: white;
+    width: 300px;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    margin: auto;
     text-align: center;
-    border-radius: 15px;
-    box-shadow: 0 0 15px rgba(0,255,200,0.2);
-    transition: 0.3s;
   }
 
-  .card:hover {
-    box-shadow: 0 0 30px rgba(0,255,200,0.45);
+  h2 {
+    margin-bottom: 10px;
   }
 
-  h1 {
+  .reading {
     font-size: 22px;
-    margin-bottom: 20px;
+    margin: 15px 0;
   }
 
   #time {
     font-size: 14px;
-    opacity: 0.8;
-  }
-
-  .value-box {
-    margin: 15px 0;
-    font-size: 26px;
-    font-weight: bold;
-  }
-
-  .temp {
-    color: #ff6b6b;
-    animation: glowTemp 1.5s infinite alternate;
-  }
-
-  .hum {
-    color: #4dd2ff;
-    animation: glowHum 1.5s infinite alternate;
-  }
-
-  @keyframes glowTemp {
-    from { text-shadow: 0 0 5px #ff6b6b; }
-    to   { text-shadow: 0 0 12px #ff6b6b; }
-  }
-
-  @keyframes glowHum {
-    from { text-shadow: 0 0 5px #4dd2ff; }
-    to   { text-shadow: 0 0 12px #4dd2ff; }
+    color: #555;
   }
 </style>
-
 </head>
 <body>
 
-<div class="card">
-  <h1>📡 Live Sensor Status</h1>
+<div class="box">
+  <h2>Sensor Dashboard</h2>
   <div id="time">Loading...</div>
 
-  <div class="value-box temp">🌡️ -- °C</div>
-  <div class="value-box hum">💧 -- %</div>
+  <div class="reading" id="temp">-- °C</div>
+  <div class="reading" id="hum">-- %</div>
 </div>
 
 <script>
   function updateUI(temp, hum) {
-    document.querySelector(".temp").innerHTML = `🌡️ ${temp} °C`;
-    document.querySelector(".hum").innerHTML = `💧 ${hum} %`;
-    document.getElementById("time").innerHTML = `🕒 ${new Date().toLocaleTimeString()}`;
+    document.getElementById("temp").innerText = temp + " °C";
+    document.getElementById("hum").innerText = hum + " %";
+    document.getElementById("time").innerText = new Date().toLocaleTimeString();
   }
 
-  // Fetch latest reading on load
   fetch("/api/latest")
-    .then(r => r.json())
+    .then(res => res.json())
     .then(data => updateUI(data.temperature, data.humidity))
     .catch(() => console.log("No initial data"));
 
-  // WebSocket for live updates
   const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + window.location.host);
 
   ws.onmessage = (event) => {
