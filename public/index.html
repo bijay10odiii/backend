@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Simple Sensor Dashboard</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #f3f3f3;
+    padding: 40px;
+  }
+
+  .box {
+    background: white;
+    width: 300px;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    margin: auto;
+    text-align: center;
+  }
+
+  h2 {
+    margin-bottom: 10px;
+  }
+
+  .reading {
+    font-size: 22px;
+    margin: 15px 0;
+  }
+
+  #time {
+    font-size: 14px;
+    color: #555;
+  }
+</style>
+</head>
+<body>
+
+<div class="box">
+  <h2>Sensor Dashboard</h2>
+  <div id="time">Loading...</div>
+
+  <div class="reading" id="temp">-- °C</div>
+  <div class="reading" id="hum">-- %</div>
+</div>
+
+<script>
+  function updateUI(temp, hum) {
+    document.getElementById("temp").innerText = temp + " °C";
+    document.getElementById("hum").innerText = hum + " %";
+    document.getElementById("time").innerText = new Date().toLocaleTimeString();
+  }
+
+  fetch("/api/latest")
+    .then(res => res.json())
+    .then(data => updateUI(data.temperature, data.humidity))
+    .catch(() => console.log("No initial data"));
+
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + window.location.host);
+
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    updateUI(data.temperature, data.humidity);
+  };
+</script>
+
+</body>
+</html>
